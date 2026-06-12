@@ -1,0 +1,7 @@
+dash>=2.14.0
+dash-bootstrap-components>=1.5.0
+plotly>=5.17.0
+pandas>=2.0.0
+yfinance>=0.2.40
+requests>=2.30.0
+python-dotenv>=1.0.0
