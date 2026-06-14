@@ -251,6 +251,22 @@ class OandaClient:
                 pass
             return {"error": str(e), "detail": detail}
 
+    def get_market_status(self, instruments: list) -> dict:
+        """Return {instrument: is_tradeable} for the given OANDA instruments."""
+        params = "instruments=" + ",".join(instruments)
+        try:
+            r = self.session.get(
+                f"{self.base_url}/accounts/{self.account_id}/pricing?{params}",
+                timeout=10,
+            )
+            r.raise_for_status()
+            return {
+                p["instrument"]: bool(p.get("tradeable", False))
+                for p in r.json().get("prices", [])
+            }
+        except Exception:
+            return {}
+
     def get_open_trades(self) -> list:
         """Return list of open trade dicts from OANDA."""
         try:

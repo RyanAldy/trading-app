@@ -797,8 +797,9 @@ def render_forex(data):
     import datetime as _dt
     from zoneinfo import ZoneInfo
 
-    forex_pairs = data.get("forex",    [])
-    calendar    = data.get("calendar", [])
+    forex_pairs = data.get("forex",      [])
+    calendar    = data.get("calendar",   [])
+    oanda_acct  = data.get("oanda_acct", {})
 
     if not forex_pairs:
         return [
@@ -826,6 +827,52 @@ def render_forex(data):
             html.Span(" OPEN" if is_open else " CLOSED", style={"fontSize": "10px", "color": color, "opacity": "0.7"}),
         ], style={"display": "flex", "alignItems": "center", "gap": "6px", "padding": "6px 14px",
                   "borderRadius": "20px", "backgroundColor": bg, "border": f"1px solid {color}55"}))
+
+    # ── OANDA balance card ────────────────────────────────────────────────────
+    if oanda_acct and "error" not in oanda_acct:
+        bal      = float(oanda_acct.get("balance", 0))
+        nav      = float(oanda_acct.get("NAV", bal))
+        ccy      = oanda_acct.get("currency", "GBP")
+        n_trades = int(oanda_acct.get("openTradeCount", 0))
+        unrealised = nav - bal
+        unr_color  = C["green"] if unrealised >= 0 else C["red"]
+        unr_sign   = "+" if unrealised >= 0 else ""
+        oanda_balance_row = html.Div([
+            html.Div([
+                html.Div("OANDA Practice Account",
+                         style={"color": C["muted"], "fontSize": "10px", "textTransform": "uppercase",
+                                "letterSpacing": "0.08em", "fontWeight": "600", "marginBottom": "2px"}),
+                html.Div([
+                    html.Span(f"{bal:,.2f} {ccy}",
+                              style={"color": C["txt"], "fontWeight": "700", "fontSize": "18px"}),
+                    html.Span(" balance",
+                              style={"color": C["muted"], "fontSize": "11px", "marginLeft": "4px"}),
+                ]),
+            ]),
+            html.Div(style={"width": "1px", "backgroundColor": C["border"], "margin": "0 20px"}),
+            html.Div([
+                html.Div("NAV", style={"color": C["muted"], "fontSize": "10px",
+                                        "textTransform": "uppercase", "letterSpacing": "0.06em"}),
+                html.Div(f"{nav:,.2f} {ccy}", style={"color": C["txt"], "fontWeight": "600", "fontSize": "14px"}),
+            ]),
+            html.Div(style={"width": "1px", "backgroundColor": C["border"], "margin": "0 20px"}),
+            html.Div([
+                html.Div("Unrealised P&L", style={"color": C["muted"], "fontSize": "10px",
+                                                    "textTransform": "uppercase", "letterSpacing": "0.06em"}),
+                html.Div(f"{unr_sign}{unrealised:,.2f} {ccy}",
+                         style={"color": unr_color, "fontWeight": "600", "fontSize": "14px"}),
+            ]),
+            html.Div(style={"width": "1px", "backgroundColor": C["border"], "margin": "0 20px"}),
+            html.Div([
+                html.Div("Open Trades", style={"color": C["muted"], "fontSize": "10px",
+                                                "textTransform": "uppercase", "letterSpacing": "0.06em"}),
+                html.Div(str(n_trades), style={"color": C["txt"], "fontWeight": "600", "fontSize": "14px"}),
+            ]),
+        ], style={"display": "flex", "alignItems": "center",
+                  "backgroundColor": C["card"], "border": f"1px solid {C['border']}",
+                  "borderRadius": "12px", "padding": "14px 20px", "marginBottom": "14px"})
+    else:
+        oanda_balance_row = None
 
     session_row = html.Div(
         [html.Span("Sessions:", style={"color": C["muted"], "fontSize": "11px", "fontWeight": "600",
@@ -991,6 +1038,7 @@ def render_forex(data):
 
     return [
         _page_header("Forex", "Major pairs · 1H analysis · live economic calendar · no PDT rule."),
+        oanda_balance_row,
         session_row,
         strength_card,
         pairs_card,
@@ -1408,6 +1456,7 @@ app.layout = html.Div(
                                     ], md=4),
                                     dbc.Col(html.Div(id="forex-modal-pnl", style={"paddingTop": "4px"}), md=8),
                                 ], className="mb-4 g-3"),
+                                html.Div(id="forex-market-status-banner", style={"marginBottom": "12px"}),
                                 dbc.Row([
                                     dbc.Col(dbc.Button(
                                         "▲  BUY", id="forex-modal-buy-btn", n_clicks=0,
@@ -1509,6 +1558,7 @@ def fetch_data(n_clicks, n_intervals):
     all_gainers = get_all_gainers()
     forex_data  = get_forex_overview()
     calendar    = get_economic_calendar()
+    oanda_acct  = oanda.get_account_summary()
 
     passing_records   = df_pass.to_dict("records")  if not df_pass.empty  else []
     watchlist_records = df_watch.to_dict("records") if not df_watch.empty else []
@@ -1526,6 +1576,7 @@ def fetch_data(n_clicks, n_intervals):
             "all_gainers": all_gainers,
             "forex":       forex_data,
             "calendar":    calendar,
+            "oanda_acct":  oanda_acct,
         },
         "",
         f"Last updated {now}",
@@ -1974,13 +2025,14 @@ def toggle_forex_modal(yf_sym):
 
 
 @callback(
-    Output("forex-modal-title",         "children"),
-    Output("forex-modal-body",          "children"),
-    Output("forex-modal-chart",         "figure"),
-    Output("forex-modal-chart-section", "style"),
-    Output("forex-modal-chart-ts",      "children"),
-    Output("forex-modal-trade-section", "style"),
-    Output("forex-modal-detail",        "data"),
+    Output("forex-modal-title",          "children"),
+    Output("forex-modal-body",           "children"),
+    Output("forex-modal-chart",          "figure"),
+    Output("forex-modal-chart-section",  "style"),
+    Output("forex-modal-chart-ts",       "children"),
+    Output("forex-modal-trade-section",  "style"),
+    Output("forex-modal-detail",         "data"),
+    Output("forex-market-status-banner", "children"),
     Input("selected-forex", "data"),
     prevent_initial_call=True,
 )
@@ -2002,7 +2054,31 @@ def populate_forex_modal(yf_sym):
                 html.P("yfinance may be rate-limited or the pair is temporarily unavailable.",
                        style={"color": C["muted"], "fontSize": "13px"}),
             ], style={"padding": "20px 0"})
-            return yf_sym, body, _blank, _CHART_HIDDEN, "", _TRADE_HIDDEN, None
+            return yf_sym, body, _blank, _CHART_HIDDEN, "", _TRADE_HIDDEN, None, None
+
+        # Check whether this instrument is currently tradeable via OANDA
+        instrument  = OandaClient.yf_to_instrument(yf_sym)
+        status_map  = oanda.get_market_status([instrument])
+        is_tradeable = status_map.get(instrument, True)
+
+        if not is_tradeable:
+            market_banner = html.Div([
+                html.Span("⏸  Market Closed",
+                          style={"fontWeight": "700", "color": C["amber"], "fontSize": "13px",
+                                 "marginRight": "10px"}),
+                html.Span(
+                    "Forex is closed on weekends. It reopens Sunday ~10 pm UTC (5 pm ET). "
+                    "You can still review the analysis and plan your trade.",
+                    style={"color": C["muted"], "fontSize": "12px"},
+                ),
+            ], style={
+                "backgroundColor": f"{C['amber']}12",
+                "border":          f"1px solid {C['amber']}44",
+                "borderRadius":    "8px",
+                "padding":         "10px 14px",
+            })
+        else:
+            market_banner = None
 
         label = detail["label"]
         fig   = _build_forex_chart(chart_raw, label) if chart_raw else _blank
@@ -2012,7 +2088,7 @@ def populate_forex_modal(yf_sym):
         return (
             f"{label}  ·  {detail['current_price']:.5f}" if "JPY" not in yf_sym
             else f"{label}  ·  {detail['current_price']:.3f}",
-            body, fig, _CHART_SHOWN, ts, _TRADE_SHOWN, detail,
+            body, fig, _CHART_SHOWN, ts, _TRADE_SHOWN, detail, market_banner,
         )
     except Exception as exc:
         body = html.Div([
@@ -2021,7 +2097,7 @@ def populate_forex_modal(yf_sym):
             html.P(str(exc)[:200],
                    style={"color": C["muted"], "fontSize": "12px", "fontFamily": "monospace"}),
         ], style={"padding": "20px 0"})
-        return yf_sym, body, _blank, _CHART_HIDDEN, "", _TRADE_HIDDEN, None
+        return yf_sym, body, _blank, _CHART_HIDDEN, "", _TRADE_HIDDEN, None, None
 
 
 @callback(
